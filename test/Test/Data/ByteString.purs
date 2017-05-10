@@ -7,6 +7,7 @@ import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Monad.Eff.Random (RANDOM)
 
+import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 
 import Test.Unit.Assert (shouldEqual)
@@ -15,6 +16,7 @@ import Test.QuickCheck (quickCheck)
 import Test.QuickCheck.Arbitrary (class Arbitrary, arbitrary)
 import Test.QuickCheck.Data.AlphaNumString (AlphaNumString(..))
 
+import Node.Buffer (BUFFER)
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(UTF8))
 
@@ -36,7 +38,7 @@ test_propertyLength :: ByteStringTest -> Boolean
 test_propertyLength (ByteStringTest bts) =
   B.length bts == (unsafePerformEff (Buffer.size (BI.unsafeToBuffer bts)))
 
-mainBS :: forall eff. TestSuite (console :: CONSOLE, random :: RANDOM, exception :: EXCEPTION | eff)
+mainBS :: forall eff. TestSuite (buffer :: BUFFER, console :: CONSOLE, random :: RANDOM, exception :: EXCEPTION | eff)
 mainBS = do
   describe "Data.ByteString" do
     it "semigroup instance" do
@@ -46,6 +48,19 @@ mainBS = do
           concatenated = bs1 <> bs2 <> bs3
       B.toString concatenated UTF8  `shouldEqual` "tést b"
       (bs1 <> (bs2 <> bs3)) `shouldEqual` ((bs1 <> bs2) <> bs3)
+
+    it "concat, init, length" do
+      let bs1  = B.pack [0x74, 0xc3, 0xa9, 0x73, 0x74]
+          bs2  = B.pack [0x98, 0x77]
+          init' = B.init bs1
+      case init' of
+        Nothing -> pure unit
+        Just init -> do
+          len <- liftEff $ Buffer.size (BI.unsafeToBuffer bs1)
+          len2 <- liftEff $ Buffer.size (BI.unsafeToBuffer init)
+          (len2 + 1) `shouldEqual` len
+          B.unpack init `shouldEqual` [0x74, 0xc3, 0xa9, 0x73]
+          B.unpack (init <> bs2) `shouldEqual` [0x74, 0xc3, 0xa9, 0x73, 0x98, 0x77]
 
     it "property length" do
       liftEff $ quickCheck test_propertyLength

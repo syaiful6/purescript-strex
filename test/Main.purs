@@ -11,6 +11,8 @@ import Test.Unit.Main (runTest)
 
 import Test.Data.ByteString (mainBS)
 
-main :: forall eff. QC (testOutput :: TESTOUTPUT, avar :: AVAR | eff) Unit
+import Node.Buffer (BUFFER)
+
+main :: forall eff. QC (buffer :: BUFFER, testOutput :: TESTOUTPUT, avar :: AVAR | eff) Unit
 main = runTest $ suite "Strex" do
   mainBS
