@@ -45,8 +45,7 @@ import Control.Monad.Rec.Class (tailRecM2, tailRecM3, Step(..))
 
 import Data.ArrayBuffer (allocArrayBuffer)
 import Data.ArrayBuffer.TypedArray
-        ( Ptr(..), Uint8, Uint8Array, newUint8Array, length, subarray, compareAV, nullPtr
-        , poke, newPtr, plusPtr)
+  (Ptr(..), Uint8, Uint8Array, newUint8Array, length, nullPtr, poke, newPtr, plusPtr)
 import Data.Function.Uncurried as Fn
 import Data.List (List(Nil), (:))
 import Data.List as L

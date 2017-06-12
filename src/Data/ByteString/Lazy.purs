@@ -68,7 +68,7 @@ null = isNothing <<< uncons
 
 -- | Get the length of a ByteString
 length :: ByteString -> Int
-length = BL.foldlChunks (\n + c -> n + (B.length c)) 0
+length = BL.foldlChunks (\n c -> n + (B.length c)) 0
 
 --------------------------------------------------------------------------------
 -- Extending byteString --------------------------------------------------------
@@ -146,6 +146,13 @@ iterate f = unfoldr (\x -> case f x of x' -> Just (Tuple x x'))
 -- | element.
 repeat :: I.Octet -> ByteString
 repeat w = Z.fix \cs -> BL.chunk (B.replicate BL.smallChunkSize w) cs
+
+reverse :: ByteString -> ByteString
+reverse cs0 = rev empty cs0
+  where
+  rev a s = case step s of
+    Empty -> a
+    Chunk x xs -> rev (BL.chunk (B.reverse x) a) xs
 
 --------------------------------------------------------------------------------
 -- Internal helper -------------------------------------------------------------
