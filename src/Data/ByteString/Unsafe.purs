@@ -12,8 +12,7 @@ import Prelude
 
 import Control.Monad.Eff.Unsafe (unsafePerformEff)
 
-import Data.ArrayBuffer.TypedArray (unsafePeekByteOff)
-import Data.ByteString.Internal (ByteString(..), Octet, assert)
+import Data.ByteString.Internal (ByteString(..), Octet, assert, unsafePeekByteOff)
 
 
 unsafeHead :: ByteString -> Octet

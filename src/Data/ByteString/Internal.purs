@@ -20,17 +20,32 @@ module Data.ByteString.Internal
   , fromBytesArray
 
   , memcpy
+  , memcpyArr
   , memmove
   , memchr
   , memcmp
   , memset
+  , subarray
   , findSubstring
+  , elemIndexEnd
 
   , reverse
   , intersperse
   , foldlPtr
   , foldrPtr
   , concat
+
+  , Ptr(..)
+  , poke
+  , pokeByteOff
+  , peek
+  , peekByteOff
+  , plusPtr
+  , minusPtr
+  , nullPtr
+  , newPtr
+  , unsafePeek
+  , unsafePeekByteOff
 
   , _isSpace
   , _isSpaceChar
@@ -43,12 +58,11 @@ import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Unsafe (unsafePerformEff)
 import Control.Monad.Rec.Class (tailRecM2, tailRecM3, Step(..))
 
-import Data.ArrayBuffer (allocArrayBuffer)
-import Data.ArrayBuffer.TypedArray
-  (Ptr(..), Uint8, Uint8Array, newUint8Array, length, nullPtr, poke, newPtr, plusPtr)
+import Data.ArrayBuffer.Types (ArrayView, ArrayBuffer, Uint8, Uint8Array, ByteOffset, ByteLength)
 import Data.Function.Uncurried as Fn
 import Data.List (List(Nil), (:))
 import Data.List as L
+import Data.Maybe (Maybe(..))
 import Data.Monoid (class Monoid, mempty)
 import Data.Tuple (Tuple(..))
 
@@ -62,6 +76,10 @@ type Offset = Int
 -- | Type synonym indicating the value refers to a length of a buffer
 type Size = Int
 
+-- | Encode Pointer as Tuple of current offset and ArrayView
+data Ptr a = Ptr ByteOffset (ArrayView a)
+
+-- | ByteString
 data ByteString = ByteString (Ptr Uint8) Offset Size
 
 instance eqByteString :: Eq ByteString where
@@ -93,6 +111,48 @@ instance monoidByteString :: Monoid ByteString where
 
 instance showByteString :: Show ByteString where
   show (ByteString v s l) = "(ByteString " <> show v <> " " <> show s <> " " <> show l <> ")"
+
+instance eqPtr :: Eq (Ptr a) where
+  eq a b = EQ == compare a b
+
+instance ordPtr :: Ord (Ptr a) where
+  compare (Ptr a b) (Ptr c d)
+    | a < c       = LT
+    | a > c       = GT
+    | otherwise   = compare 0 $ Fn.runFn2 _arrayViewCompare b d
+
+instance showPtr :: Show (Ptr a) where
+  show (Ptr n v) = "(Ptr " <> show n <> " " <> _printArrayView v <> " )"
+
+newPtr :: forall a. ArrayView a -> Ptr a
+newPtr = Ptr 0
+
+nullPtr :: forall a. Ptr a
+nullPtr = Ptr 0 _nullPtr
+
+poke :: forall a eff. Ptr a -> Int -> Eff eff Unit
+poke ptr = pokeByteOff ptr 0
+
+peek :: forall a eff. Ptr a -> Eff eff (Maybe Int)
+peek ptr = peekByteOff ptr 0
+
+unsafePeek :: forall a eff. Ptr a -> Eff eff Int
+unsafePeek ptr = unsafePeekByteOff ptr 0
+
+pokeByteOff :: forall a eff. Ptr a -> ByteOffset -> Int -> Eff eff Unit
+pokeByteOff (Ptr off av) n v = Fn.runFn3 _setAtOffset v (off + n) av
+
+peekByteOff :: forall a eff. Ptr a -> ByteOffset -> Eff eff (Maybe Int)
+peekByteOff (Ptr off av) n = Fn.runFn4 _getAtOffset Nothing Just (off + n) av
+
+unsafePeekByteOff :: forall a eff. Ptr a -> ByteOffset -> Eff eff Int
+unsafePeekByteOff (Ptr off av) n = Fn.runFn2 _unsafeGetAtOffset (off + n) av
+
+plusPtr :: forall a. Ptr a -> Int -> Ptr a
+plusPtr (Ptr n av) m = Ptr (n + m) av
+
+minusPtr :: forall a. Ptr a -> Ptr a -> Int
+minusPtr (Ptr n _) (Ptr m _) = n - m
 
 packBytes :: List Octet -> ByteString
 packBytes xs = unsafePackLenBytes (L.length xs) xs
@@ -160,18 +220,25 @@ createAndTrim' size' k = do
       pure $ Tuple ps value
 
 mallocByteString :: forall eff. Size -> Eff eff (Ptr Uint8)
-mallocByteString size = newPtr <$> (allocArrayBuffer size >>= newUint8Array 0 size)
+mallocByteString size = do
+  b <- allocArrayBuffer size
+  u8 <- Fn.runFn3 _newUint8Array 0 size b
+  pure (newPtr u8)
 
 fromBytesArray :: forall eff. Array Octet -> Eff eff (Tuple (Ptr Uint8) Size)
 fromBytesArray xs = do
   pt <- _fromArray xs
-  pure $ Tuple (newPtr pt) (length pt)
+  len <- _arrayViewLen pt
+  pure $ Tuple (newPtr pt) len
 
 toBytesArray :: forall eff. Ptr Uint8 -> Offset -> Size -> (Eff eff (Array Octet))
 toBytesArray (Ptr n av) ofs size = Fn.runFn3 _toArray av (ofs + n) size
 
 memcpy :: forall eff. Ptr Uint8 -> Ptr Uint8 -> Size -> Eff eff Unit
 memcpy (Ptr off1 av1) (Ptr off2 av2) n = Fn.runFn5 _memcpy av1 off1 av2 off2 n
+
+memcpyArr :: forall eff. Ptr Uint8 -> Array Octet -> Eff eff Unit
+memcpyArr (Ptr ofs buf) arr = Fn.runFn3 _memcpyArr buf ofs arr
 
 memmove :: forall eff. Ptr Uint8 -> Ptr Uint8 -> Size -> Eff eff Unit
 memmove (Ptr off1 av1) (Ptr off2 av2) n = Fn.runFn5 _memmove av1 off1 av2 off2 n
@@ -200,9 +267,27 @@ foldlPtr f a (Ptr offs av) = Fn.runFn4 _foldl f a offs av
 foldrPtr :: forall a. (Octet -> a -> a) -> a -> Ptr Uint8 -> a
 foldrPtr f a (Ptr offs av) = Fn.runFn4 _foldr f a offs av
 
-findSubstring :: forall eff. ByteString -> ByteString -> Eff eff Int
+elemIndexEnd :: forall a. Int -> ArrayView a -> Maybe Int
+elemIndexEnd x xs = Fn.runFn4 _findLastIndex Nothing Just (x == _) xs
+
+-- | returns a new TypedArray on the same ArrayBuffer store
+subarray
+  :: forall a eff
+   . ByteOffset
+  -- ^ Zero-based index at which to begin extraction.
+  -> ByteOffset
+  -- ^ Zero-based index before which to end extraction. slice extracts up to but not including end.
+  -> ArrayView a
+  -- ^ The target typedarray to slice
+  -> Eff eff (ArrayView a)
+subarray start end ta = Fn.runFn3 _subarray start end ta
+
+findSubstring :: ByteString -> ByteString -> Int
 findSubstring (ByteString (Ptr a av) n l) (ByteString (Ptr b bv) m j) =
   Fn.runFn6 _findSubstring av (a + n) l bv (b + m) j
+
+newUint8Array :: forall eff. ByteOffset -> ByteLength -> ArrayBuffer -> Eff eff Uint8Array
+newUint8Array ofs len ab = Fn.runFn3 _newUint8Array ofs len ab
 
 concat :: List ByteString -> ByteString
 concat xs = goLen0 xs xs
@@ -248,6 +333,8 @@ _isSpaceChar c =
 
 foreign import _memcpy :: forall eff. Fn.Fn5 Uint8Array Offset Uint8Array Offset Size (Eff eff Unit)
 
+foreign import _memcpyArr :: forall eff. Fn.Fn3 Uint8Array Offset (Array Octet) (Eff eff Unit)
+
 foreign import  _memmove :: forall eff. Fn.Fn5 Uint8Array Offset Uint8Array Offset Size (Eff eff Unit)
 
 foreign import _memchr :: forall eff. Fn.Fn4 Uint8Array Offset Octet Size (Eff eff Offset)
@@ -268,6 +355,28 @@ foreign import _foldl :: forall a. Fn.Fn4 (a -> Octet -> a) a Offset Uint8Array 
 
 foreign import _foldr :: forall a. Fn.Fn4 (Octet -> a -> a) a Offset Uint8Array a
 
-foreign import _findSubstring :: forall eff. Fn.Fn6 Uint8Array Offset Size Uint8Array Offset Size (Eff eff Int)
+foreign import _findSubstring :: Fn.Fn6 Uint8Array Offset Size Uint8Array Offset Size Int
 
 foreign import assert :: forall a. Boolean -> a -> a
+
+foreign import allocArrayBuffer :: forall eff. Int -> Eff eff ArrayBuffer
+
+foreign import _newUint8Array :: forall eff. Fn.Fn3 ByteOffset ByteLength ArrayBuffer (Eff eff Uint8Array)
+
+foreign import _findLastIndex :: forall a. Fn.Fn4 (forall x. Maybe x) (forall x. x -> Maybe x) (Int -> Boolean) (ArrayView a) (Maybe Int)
+
+foreign import _subarray :: forall a eff. Fn.Fn3 ByteOffset ByteOffset (ArrayView a) (Eff eff (ArrayView a))
+
+foreign import _arrayViewLen :: forall a eff. ArrayView a -> Eff eff Int
+
+foreign import _setAtOffset :: forall a eff. Fn.Fn3 Int Int (ArrayView a) (Eff eff Unit)
+
+foreign import _getAtOffset :: forall a eff. Fn.Fn4 (forall x. Maybe x) (forall x. x -> Maybe x) ByteOffset (ArrayView a) (Eff eff (Maybe Int))
+
+foreign import _unsafeGetAtOffset :: forall a eff. Fn.Fn2 ByteOffset (ArrayView a) (Eff eff Int)
+
+foreign import _arrayViewCompare :: forall a. Fn.Fn2 (ArrayView a) (ArrayView a) Int
+
+foreign import _nullPtr :: forall a. (ArrayView a)
+
+foreign import _printArrayView :: forall a. ArrayView a -> String

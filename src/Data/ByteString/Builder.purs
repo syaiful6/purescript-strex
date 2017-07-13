@@ -3,17 +3,17 @@ module Data.ByteString.Builder
   , charUtf8
   , stringUtf8
   , string7
+  , string8
   , htmlEscapedChar
   , module Exports
   ) where
 
 import Prelude
 
-import Data.ByteString.Builder.Internal (Builder) as Exports
+import Data.ByteString.Builder.Internal (Builder, byteString, lazyByteString) as Exports
 import Data.ByteString.Builder.Internal as I
 import Data.ByteString.Builder.Prim as P
 import Data.ByteString.Lazy.Internal as L
-import Data.String (toCharArray)
 
 toLazyByteString :: I.Builder -> L.ByteString
 toLazyByteString =
@@ -23,10 +23,13 @@ charUtf8 :: Char -> I.Builder
 charUtf8 = P.primBounded P.charUtf8
 
 stringUtf8 :: String -> I.Builder
-stringUtf8 = P.primMapArrayBounded P.charUtf8 <<< toCharArray
+stringUtf8 = P.primMapStringBounded P.charUtf8
+
+string8 :: String -> I.Builder
+string8 = P.primMapStringBounded (P.liftToBounded P.char8)
 
 string7 :: String -> I.Builder
-string7 = P.primMapArrayBounded (P.liftToBounded P.char7) <<< toCharArray
+string7 = P.primMapStringBounded (P.liftToBounded P.char7)
 
 htmlEscapedChar :: Char -> I.Builder
 htmlEscapedChar chr = I.ensureFree 6 <> I.builder (step chr)

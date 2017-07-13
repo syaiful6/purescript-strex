@@ -115,6 +115,16 @@ mainBS = do
           ix = B.elemIndexEnd 0x64 bs
       ix `shouldEqual` Just 5
 
+    it "findIndex return first index of elem" do
+      let bs = B.pack [0x74, 0x72, 0x64, 0x67, 0x55, 0x64, 0x65]
+          ix = B.findIndex (_ == 0x64) bs
+      ix `shouldEqual` Just 2
+
+    it "findIndex return Nothing if predicate return false for all elem" do
+      let bs = B.pack [0x74, 0x72, 0x64, 0x67, 0x55, 0x64, 0x65]
+          ix = B.findIndex (const false) bs
+      ix `shouldEqual` Nothing
+
     it "snoc Append a byte to the end of a 'ByteString'" do
       let bs = B.pack [0x74, 0x72, 0x64, 0x67, 0x55]
       B.snoc bs 0x2c `shouldEqual` B.pack [0x74, 0x72, 0x64, 0x67, 0x55, 0x2c]

@@ -12,6 +12,15 @@ exports._memcpy = function (dest, destOf, src, srcOf, n) {
   }
 }
 
+exports._memcpyArr = function (dest, ofs, src) {
+  return function () {
+    var len = src.length
+    for (var i = 0; i < len; i++) {
+      dest[ofs + i] = src[i]
+    }
+  }
+}
+
 exports._reverse = function (dest, destOf, src, srcOf, n) {
   return function () {
     if (n > 0) {
@@ -117,32 +126,106 @@ exports.assert = function (bool) {
 };
 
 exports._findSubstring = function (pattern, patOf, M, target, targOf, N) {
+  var p = 0
+  var t = 0
+  var h = 1
+
+  h = Math.pow(256, M - 1) % 101
+
+  for (var i = 0; i < M ; i++ ) {
+    p = (256 * p + pattern[patOf + i]) % 101
+    t = (256 * t + target[targOf + i]) % 101
+  }
+
+  for (var i = 0; i <= N - M; i++) {
+    if (p === t) {
+      for (var j = 0; j < M ; j++) {
+        if (target[targOf + i + j] !== pattern[patOf + j]) break
+      }
+
+      if (j === M) return i
+    }
+
+    if (i < N - M ) {
+      t = (256 * (t - target[targOf + i] * h) + target[i + targOf + M]) % 101;
+      t = (t < 0 ) ? (t + 101) : t
+    }
+  }
+  return -1
+}
+
+exports.allocArrayBuffer = function (size) {
   return function () {
-    var p = 0
-    var t = 0
-    var h = 1
-
-    h = Math.pow(256, M - 1) % 101
-
-    for (var i = 0; i < M ; i++ ) {
-      p = (256 * p + pattern[patOf + i]) % 101
-      t = (256 * t + target[targOf + i]) % 101
-    }
-
-    for (var i = 0; i <= N - M; i++) {
-      if (p === t) {
-        for (var j = 0; j < M ; j++) {
-          if (target[targOf + i + j] !== pattern[patOf + j]) break
-        }
-
-        if (j === M) return i
-      }
-
-      if (i < N - M ) {
-        t = (256 * (t - target[targOf + i] * h) + target[i + targOf + M]) % 101;
-        t = (t < 0 ) ? (t + 101) : t
-      }
-    }
-    return -1
+    return new ArrayBuffer(size)
   }
 }
+
+exports._newUint8Array = function (byteOffset, length, buffer) {
+  return function () {
+    return new Uint8Array(buffer, byteOffset, length);
+  };
+};
+
+exports._subarray = function (start, end, ta) {
+  return function () {
+    return ta.subarray(start, end);
+  };
+};
+
+exports._findLastIndex = function (nothing, just, f, xs) {
+  for (var i = xs.length - 1; i >= 0; i--) {
+    if (f(xs[i])) return just(i);
+  }
+  return nothing
+}
+
+exports._arrayViewLen = function (av) {
+  return function () {
+    return av.length
+  }
+}
+
+exports._printArrayView = function (xs) {
+  return "(TypedArray " + xs.toString() + " )"
+}
+
+exports._arrayViewCompare = function (a, b) {
+  if (a === b) return 0
+  var x = a.length
+  var y = b.length
+  for (var i = 0, len = Math.min(x, y); i < len; ++i) {
+    if (a[i] !== b[i]) {
+      x = a[i]
+      y = b[i]
+      break
+    }
+  }
+
+  if (x < y) return -1
+  if (y < x) return 1
+  return 0
+}
+
+exports._setAtOffset = function (value, offset, buff) {
+  return function() {
+    buff[offset] = value
+  }
+};
+
+exports._getAtOffset = function (nothing, just, offset, ta) {
+  return function () {
+    var octet = ta[offset];
+    return octet == null ? nothing
+                         : just(octet);
+  };
+};
+
+exports._unsafeGetAtOffset = function (offset, ta) {
+  return function () {
+    var octet = ta[offset];
+    if (octet != null) return octet
+    throw new Error('_unsafeGetAtOffset return null, its meant you request is out of bounds')
+  }
+}
+
+exports._nullPtr = new Uint8Array(0)

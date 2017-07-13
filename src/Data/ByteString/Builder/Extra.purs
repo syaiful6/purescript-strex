@@ -17,12 +17,13 @@ import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Ref (newRef, readRef, writeRef)
 
-import Data.ArrayBuffer.TypedArray (Ptr, Uint8, plusPtr, minusPtr)
+import Data.ArrayBuffer.Types (Uint8)
 import Data.ByteString.Builder.Internal
   ( Builder, toLazyByteStringWith, byteStringCopy, byteStringInsert, byteStringThreshold
   , AllocationStrategy, safeStrategy, untrimmedStrategy, flush
   , UNREFINED, RefinedEff, refinedEff, unsafePerformRefined)
 import Data.ByteString as S
+import Data.ByteString.Internal (Ptr, plusPtr, minusPtr)
 import Data.ByteString.Builder.Internal as I
 import Data.Either (Either(..))
 import Data.Tuple (Tuple(..))
