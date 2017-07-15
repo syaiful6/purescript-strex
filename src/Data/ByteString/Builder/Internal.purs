@@ -76,12 +76,12 @@ import Data.Maybe (Maybe(..))
 import Data.Monoid (class Monoid, mempty)
 import Data.Tuple (Tuple(..))
 
-import Data.ArrayBuffer.TypedArray (Ptr, Uint8, plusPtr, minusPtr)
+import Data.ArrayBuffer.Types (Uint8)
 import Data.ByteString as S
 import Data.ByteString.Lazy.Internal
   (chunk, smallChunkSize, defaultChunkSize, empty, foldrChunks') as L
 import Data.ByteString.Lazy (ByteString(..), Step(..)) as L
-import Data.ByteString.Internal (create, mallocByteString, memcpy)
+import Data.ByteString.Internal (Ptr, plusPtr, minusPtr, create, mallocByteString, memcpy)
 
 foreign import data UNREFINED :: Effect
 

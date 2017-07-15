@@ -54,20 +54,18 @@ import Prelude
 import Control.Monad.Eff.Unsafe (unsafePerformEff)
 import Control.Monad.Rec.Class (tailRecM3, Step(..))
 
-import Data.ArrayBuffer.TypedArray (Ptr(..), nullPtr, plusPtr, minusPtr, poke, peek, peekByteOff)
-import Data.ArrayBuffer.TypedArray as T
-import Data.ByteString.Internal (ByteString(..), Octet)
+import Data.ByteString.Internal
+  ( ByteString(..), Octet, Ptr(..), nullPtr, plusPtr, minusPtr, poke, peek, peekByteOff)
 import Data.ByteString.Internal as B
+import Data.ByteString.Unsafe as U
 import Data.Foldable as F
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (Maybe(..))
 import Data.List (List(Nil), (:))
 import Data.Monoid (class Monoid, mempty)
 import Data.Monoid.Conj (Conj(..))
 import Data.Monoid.Disj (Disj(..))
 import Data.Newtype (alaF)
 import Data.Tuple (Tuple(..))
-
-import Partial.Unsafe (unsafePartial)
 
 
 -- | The empty 'ByteString'
@@ -137,12 +135,7 @@ uncons (ByteString x s l)
   | l <= 0    = Nothing
   | otherwise = unsafePerformEff do
       h <- peekByteOff x s
-      pure $
-        { head: _
-        , tail: ByteString x (s + 1) (l - 1)
-        }
-        <$>
-        h
+      pure $ { head: _, tail: ByteString x (s + 1) (l - 1) } <$> h
 
 -- | Extract the last element of a ByteString
 -- |
@@ -168,12 +161,7 @@ unsnoc bs@(ByteString x s l)
   | null bs    = Nothing
   | otherwise  = unsafePerformEff do
       lst <- peekByteOff x (s + l - 1)
-      pure $
-        { init: ByteString x s (l - 1)
-        , last: _
-        }
-        <$>
-        lst
+      pure $ { init: ByteString x s (l - 1), last: _ } <$> lst
 
 --------------------------------------------------------------------------------
 -- Extending -------------------------------------------------------------------
@@ -222,19 +210,20 @@ elemIndex c (ByteString p s l) = unsafePerformEff do
 -- | equal to the query element, or 'Nothing' if there is no such element.
 elemIndexEnd :: Octet -> ByteString -> Maybe Int
 elemIndexEnd c (ByteString (Ptr n x) s l) = unsafePerformEff do
-  p <- T.subarray (n + s) (n + s + l) x
-  pure $ T.elemIndexEnd c p
+  p <- B.subarray (n + s) (n + s + l) x
+  pure $ B.elemIndexEnd c p
 
+-- | The 'findIndex' function takes a predicate and a 'ByteString' and
+-- | returns the index of the first element in the ByteString
+-- | satisfying the predicate.
 findIndex :: (Octet -> Boolean) -> ByteString -> Maybe Int
 findIndex k (ByteString x s l) = go s x
   where
     go n p
       | n >= l    = Nothing
       | otherwise =
-          let a = unsafePerformEff $ peek p
-          in case a of
-            Nothing -> Nothing
-            Just b  -> if k b then Just n else go (n + 1) (p `plusPtr` 1)
+          let a = unsafePerformEff $ B.unsafePeek p
+          in if k a then Just n else go (n + 1) (p `plusPtr` 1)
 
 --------------------------------------------------------------------------------
 -- Sarching for substrings -----------------------------------------------------
@@ -265,11 +254,11 @@ stripPrefix bs1@(ByteString _ _ l1) bs2
 -- | Running time: `O(n)`
 isSuffixOf :: ByteString -> ByteString -> Boolean
 isSuffixOf (ByteString x1 s1 l1) (ByteString x2 s2 l2)
- | l1 == 0   = true
- | l2 < l1   = false
- | otherwise = unsafePerformEff do
-    i <- B.memcmp (x1 `plusPtr` s1) (x2 `plusPtr` s2 `plusPtr` (l2 - l1)) l1
-    pure $ i == 0
+  | l1 == 0   = true
+  | l2 < l1   = false
+  | otherwise = unsafePerformEff do
+      i <- B.memcmp (x1 `plusPtr` s1) (x2 `plusPtr` s2 `plusPtr` (l2 - l1)) l1
+      pure $ i == 0
 
 -- | Takes two ByteStrings and returns 'Just' the remainder of the second if
 -- | the first is its suffix, and otherwise Nothing
@@ -277,8 +266,8 @@ isSuffixOf (ByteString x1 s1 l1) (ByteString x2 s2 l2)
 -- | Running time: `O(n)`
 stripSuffix :: ByteString -> ByteString -> Maybe ByteString
 stripSuffix bs1@(ByteString _ _ l1) bs2@(ByteString _ _ l2)
-   | bs1 `isSuffixOf` bs2 = Just (take (l2 - l1) bs2)
-   | otherwise            = Nothing
+  | bs1 `isSuffixOf` bs2 = Just (take (l2 - l1) bs2)
+  | otherwise            = Nothing
 
 -- -----------------------------------------------------------------------------
 -- Substrings ------------------------------------------------------------------
@@ -320,11 +309,11 @@ break k ps = case findIndexOrEnd k ps of n -> { before: take n ps, after: drop n
 breakSubstring :: ByteString -> ByteString -> { before :: ByteString, after :: ByteString }
 breakSubstring pat src = case length pat, compare (length pat) (length src) of
   0, _  -> { before: empty, after: src }
-  1, _  -> break (_ == unsafePartial $ fromJust $ head pat) src
+  1, _  -> break (_ == U.unsafeHead pat) src
   _, GT -> { before: src, after: empty }
-  _, _  -> unsafePerformEff do
-    i <- B.findSubstring pat src
-    pure $ if i < 0 then { before: empty, after: src } else splitAt i src
+  _, _  ->
+    let i = B.findSubstring pat src
+    in if i < 0 then { before: empty, after: src } else splitAt i src
 
 --------------------------------------------------------------------------------
 -- Transformations -------------------------------------------------------------

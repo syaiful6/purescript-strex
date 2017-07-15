@@ -16,7 +16,8 @@ module Data.ByteString.Builder.Prim.Types
 
 import Prelude
 
-import Data.ArrayBuffer.TypedArray (Ptr, Uint8, plusPtr)
+import Data.ArrayBuffer.Types (Uint8)
+import Data.ByteString.Internal (Ptr, plusPtr)
 import Data.ByteString.Builder.Internal (RefinedEff)
 import Data.Functor.Contravariant (class Contravariant)
 import Data.Decide (class Decide, choose)

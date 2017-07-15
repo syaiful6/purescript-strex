@@ -2,9 +2,11 @@ module Data.ByteString.Builder.Prim
   ( primFixed
   , primBounded
   , primMapArrayBounded
+  , primMapStringBounded
   , primUnfoldrBounded
   , primMapListBounded
   , char7
+  , char8
   , charUtf8
   , module Data.ByteString.Builder.Prim.Types
   , module Data.ByteString.Builder.Prim.Binary
@@ -12,16 +14,17 @@ module Data.ByteString.Builder.Prim
 
 import Prelude
 
+import Control.Monad.Eff (whileE)
 import Control.Monad.Eff.Class (liftEff)
+import Control.Monad.ST (newSTRef, readSTRef, writeSTRef, runST)
 import Control.Monad.Rec.Class (tailRecM2, Step(..))
 
 import Data.Array as A
 import Data.Int.Bits ((.&.), shr)
 import Data.Char (toCharCode)
-import Data.ByteString.Internal (Octet)
-import Data.ArrayBuffer.TypedArray (plusPtr, pokeByteOff)
+import Data.ByteString.Internal (plusPtr, pokeByteOff, memcpyArr)
 import Data.ByteString.Builder.Internal
-  (Builder, BuildStep, BufferRange(..), ensureFree, builder, bufferFull)
+  (Builder, BuildStep, BufferRange(..), ensureFree, builder, bufferFull, refinedEff)
 import Data.ByteString.Builder.Prim.Types
   ( FixedPrim, BoundedPrim, size, runFP, emptyFP, liftToBounded, boundedPrim, sizeBound
   , runBP, emptyBP )
@@ -32,13 +35,15 @@ import Data.ByteString.Builder.Prim.Binary
 import Data.Functor.Contravariant ((>$<))
 import Data.List as L
 import Data.Maybe (Maybe(..))
+import Data.String (length) as S
+import Data.String.Unsafe (charAt) as S
 import Data.Tuple (Tuple(..))
+import Partial.Unsafe (unsafePartial)
 
-
-primFixed :: forall a. FixedPrim a -> (a -> Builder)
+primFixed :: forall a. FixedPrim a -> a -> Builder
 primFixed = primBounded <<< I.liftToBounded
 
-primBounded :: forall a. BoundedPrim a -> (a -> Builder)
+primBounded :: forall a. BoundedPrim a -> a -> Builder
 primBounded w x = ensureFree (I.sizeBound w) <> builder step
   where
   step :: forall r. BuildStep r -> BuildStep r
@@ -61,18 +66,60 @@ primMapListBounded w xs0 = builder (step xs0)
     bound = I.sizeBound w
 
 primMapArrayBounded :: forall a. BoundedPrim a -> Array a -> Builder
-primMapArrayBounded w xs0 = builder (step xs0)
+primMapArrayBounded w xs0 = builder (step 0)
   where
-  step :: forall r. Array a -> BuildStep r -> BuildStep r
-  step xs1 k (BufferRange op0 ope0) = tailRecM2 go xs1 op0
-    where
-    go ys op = case A.uncons ys of
-      Nothing -> Done <$> k (BufferRange op ope0)
-      Just { head, tail }
-        | op `plusPtr` bound <= ope0 -> Loop <<< { a: tail, b:_ } <$> I.runBP w head op
-        | otherwise                  -> pure $ Done (bufferFull bound op (step ys k))
-
+  lenxs = A.length xs0
+  step :: forall r. Int -> BuildStep r -> BuildStep r
+  step i k (BufferRange op0 ope0)=
+    if lenxs <= i
+      then k (BufferRange op0 ope0)
+      else
+      liftEff $ runST do
+        ix <- newSTRef i
+        op <- newSTRef op0
+        loop <- newSTRef true
+        whileE (readSTRef loop) do
+          i' <- readSTRef ix
+          op1 <- readSTRef op
+          op2 <- refinedEff (I.runBP w (unsafePartial (A.unsafeIndex xs0 i')) op1)
+          let ix' = i' + 1
+          unless (lenxs > ix' && op2 `plusPtr` bound <= ope0) (void $ writeSTRef loop false)
+          _ <- writeSTRef op op2
+          void $ writeSTRef ix ix'
+        ic <- readSTRef ix
+        op2 <- readSTRef op
+        if lenxs > ic
+          then pure (bufferFull bound op2 (step ic k))
+          else refinedEff (k (BufferRange op2 ope0))
   bound = I.sizeBound w
+
+primMapStringBounded :: BoundedPrim Char -> String -> Builder
+primMapStringBounded w str = builder (step 0)
+  where
+  lenxs = S.length str
+  bound = I.sizeBound w
+  step :: forall r. Int -> BuildStep r -> BuildStep r
+  step i k (BufferRange op0 ope0)=
+    if lenxs <= i
+      then k (BufferRange op0 ope0)
+      else
+      liftEff $ runST do
+        ix <- newSTRef i
+        op <- newSTRef op0
+        loop <- newSTRef true
+        whileE (readSTRef loop) do
+          i' <- readSTRef ix
+          op1 <- readSTRef op
+          op2 <- refinedEff (I.runBP w (unsafePartial (S.charAt i' str)) op1)
+          let ix' = i' + 1
+          unless (lenxs > ix' && op2 `plusPtr` bound <= ope0) (void $ writeSTRef loop false)
+          _ <- writeSTRef op op2
+          void $ writeSTRef ix ix'
+        ic <- readSTRef ix
+        op2 <- readSTRef op
+        if lenxs > ic
+          then pure (bufferFull bound op2 (step ic k))
+          else refinedEff (k (BufferRange op2 ope0))
 
 primUnfoldrBounded :: forall a b. BoundedPrim b -> (a -> Maybe (Tuple b a)) -> a -> Builder
 primUnfoldrBounded w f x0 = builder (fillWith x0)
@@ -94,46 +141,31 @@ primUnfoldrBounded w f x0 = builder (fillWith x0)
 char7 :: FixedPrim Char
 char7 = (\c -> toCharCode c .&. 0x7F) >$< uint8BE
 
-charUtf8 :: BoundedPrim Char
-charUtf8 = I.boundedPrim 4 (encodeCharUtf8 f1 f2 f3 f4)
-  where
-  pokeN n io op  = io op *> pure (op `plusPtr` n)
-  f1 x1    = pokeN 1 \op -> liftEff $ pokeByteOff op 0 x1
-  f2 x1 x2 = pokeN 2 $ \op -> liftEff do
-    pokeByteOff op 0 x1
-    pokeByteOff op 1 x2
-  f3 x1 x2 x3 = pokeN 3 \op -> liftEff do
-    pokeByteOff op 0 x1
-    pokeByteOff op 1 x2
-    pokeByteOff op 2 x3
-  f4 x1 x2 x3 x4 = pokeN 4 \op -> liftEff do
-    pokeByteOff op 0 x1
-    pokeByteOff op 1 x2
-    pokeByteOff op 2 x3
-    pokeByteOff op 3 x4
+char8 :: FixedPrim Char
+char8 = toCharCode >$< uint8BE
 
-encodeCharUtf8
-  :: forall a
-   . (Octet -> a)
-  -> (Octet -> Octet -> a)
-  -> (Octet -> Octet -> Octet -> a)
-  -> (Octet -> Octet -> Octet -> Octet -> a)
-  -> Char
-  -> a
-encodeCharUtf8 f1 f2 f3 f4 ch = case toCharCode ch of
-  x | x <= 0x7F   -> f1 x
-    | x <= 0x07FF ->
-        let x1 = (x `shr` 6)  + 0xC0
-            x2 = (x .&. 0x3F) + 0x80
-        in f2 x1 x2
-    | x <= 0xFFFF ->
-        let x1 = (x `shr` 12) + 0xE0
-            x2 = ((x `shr` 6) .&. 0x3F) + 0x80
-            x3 = (x .&. 0x3F) + 0x80
-        in f3 x1 x2 x3
-    | otherwise ->
-        let x1 = (x `shr` 18) + 0xF0
-            x2 = ((x `shr` 12) .&. 0x3F) + 0x80
-            x3 = ((x `shr` 6) .&. 0x3F) + 0x80
-            x4 = (x .&. 0x3F) + 0x80
-        in f4 x1 x2 x3 x4
+charUtf8 :: BoundedPrim Char
+charUtf8 = I.boundedPrim 4 step
+  where
+  step chr op = liftEff $ case toCharCode chr of
+    x | x <= 0x7F -> do
+          pokeByteOff op 0 x
+          pure (op `plusPtr` 1)
+      | x <= 0x07FF -> do
+          let x1 = (x `shr` 6)  + 0xC0
+              x2 = (x .&. 0x3F) + 0x80
+          memcpyArr op [x1, x2]
+          pure (op `plusPtr` 2)
+      | x <= 0xFFFF -> do
+          let x1 = (x `shr` 12) + 0xE0
+              x2 = ((x `shr` 6) .&. 0x3F) + 0x80
+              x3 = (x .&. 0x3F) + 0x80
+          memcpyArr op [x1, x2, x2]
+          pure (op `plusPtr` 3)
+      | otherwise -> do
+          let x1 = (x `shr` 18) + 0xF0
+              x2 = ((x `shr` 12) .&. 0x3F) + 0x80
+              x3 = ((x `shr` 6) .&. 0x3F) + 0x80
+              x4 = (x .&. 0x3F) + 0x80
+          memcpyArr op [x1, x2, x3, x4]
+          pure (op `plusPtr` 4)

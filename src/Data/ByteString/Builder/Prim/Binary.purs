@@ -17,7 +17,7 @@ import Prelude
 
 import Control.Monad.Eff.Class (liftEff)
 
-import Data.ArrayBuffer.TypedArray (poke, plusPtr)
+import Data.ByteString.Internal (poke, plusPtr)
 import Data.Int.Bits ((.&.), shr, zshr)
 import Data.ByteString.Builder.Prim.Types (FixedPrim, fixedPrim)
 
