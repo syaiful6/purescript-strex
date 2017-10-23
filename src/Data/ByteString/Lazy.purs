@@ -10,6 +10,8 @@ module Data.ByteString.Lazy
   , snoc
   , head
   , tail
+  , last
+  , init
   , uncons
   , foldl
   , foldr
@@ -17,6 +19,7 @@ module Data.ByteString.Lazy
   , unfoldr
   , iterate
   , repeat
+  , reverse
   , module Data.ByteString.Lazy.Internal
   ) where
 
@@ -31,7 +34,7 @@ import Data.ByteString.Lazy.Internal
 import Data.ByteString.Lazy.Internal as BL
 import Data.Maybe (Maybe(..), isNothing, maybe)
 import Data.Lazy (defer)
-import Data.List.Lazy (List, Step(..), step, cons, nil) as L
+import Data.List.Lazy (List, cons, nil, foldrLazy) as L
 import Data.Tuple (Tuple(..))
 
 -- | The empty 'ByteString'
@@ -46,7 +49,7 @@ singleton s = BL.chunk (B.singleton s) empty
 
 -- | /O(c)/ Convert a list of strict 'ByteString' into a lazy 'ByteString'
 fromChunks :: L.List B.ByteString -> ByteString
-fromChunks cs = foldrLazy BL.chunk empty cs
+fromChunks cs = L.foldrLazy BL.chunk empty cs
 
 -- | /O(c)/ Convert a lazy 'ByteString' into a list of strict 'ByteString'
 toChunks :: ByteString -> L.List B.ByteString
@@ -153,14 +156,3 @@ reverse cs0 = rev empty cs0
   rev a s = case step s of
     Empty -> a
     Chunk x xs -> rev (BL.chunk (B.reverse x) a) xs
-
---------------------------------------------------------------------------------
--- Internal helper -------------------------------------------------------------
---------------------------------------------------------------------------------
-
-foldrLazy :: forall a b. Z.Lazy b => (a -> b -> b) -> b -> L.List a -> b
-foldrLazy op z = go
-  where
-  go xs = case L.step xs of
-    L.Nil -> z
-    L.Cons x xs' -> Z.defer \_ -> x `op` go xs'
