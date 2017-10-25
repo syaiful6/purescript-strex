@@ -34,18 +34,22 @@ module Data.ByteString
   , takeWhile
   , dropWhile
   , break
+  , breakEnd
   , breakSubstring
+  , span
   , reverse
   , intersperse
   , foldl
   , foldr
-  , foldMap
+  , concatMap
   , all
   , any
   , unfoldr
   , unfoldrN
   , replicate
   , copy
+  , zipWith
+  , zip
   , module Data.ByteString.Internal
   ) where
 
@@ -54,17 +58,14 @@ import Prelude
 import Control.Monad.Eff.Unsafe (unsafePerformEff)
 import Control.Monad.Rec.Class (tailRecM3, Step(..))
 
-import Data.ByteString.Internal
-  ( ByteString(..), Octet, Ptr(..), nullPtr, plusPtr, minusPtr, poke, peek, peekByteOff)
+import Data.ByteString.Internal (ByteString(..), Octet, Ptr(..), nullPtr, plusPtr
+                                ,minusPtr, poke, peek, peekByteOff, unsafePeek)
 import Data.ByteString.Internal as B
 import Data.ByteString.Unsafe as U
 import Data.Foldable as F
 import Data.Maybe (Maybe(..))
 import Data.List (List(Nil), (:))
-import Data.Monoid (class Monoid, mempty)
-import Data.Monoid.Conj (Conj(..))
-import Data.Monoid.Disj (Disj(..))
-import Data.Newtype (alaF)
+import Data.List (reverse) as L
 import Data.Tuple (Tuple(..))
 
 
@@ -217,13 +218,13 @@ elemIndexEnd c (ByteString (Ptr n x) s l) = unsafePerformEff do
 -- | returns the index of the first element in the ByteString
 -- | satisfying the predicate.
 findIndex :: (Octet -> Boolean) -> ByteString -> Maybe Int
-findIndex k (ByteString x s l) = go s x
+findIndex k (ByteString x s l) = go (x `plusPtr` s) 0
   where
-    go n p
+    go ptr n
       | n >= l    = Nothing
       | otherwise =
-          let a = unsafePerformEff $ B.unsafePeek p
-          in if k a then Just n else go (n + 1) (p `plusPtr` 1)
+          let w = unsafePerformEff $ B.unsafePeek ptr
+          in if k w then Just n else go (ptr `plusPtr` 1) (n + 1)
 
 --------------------------------------------------------------------------------
 -- Sarching for substrings -----------------------------------------------------
@@ -300,11 +301,19 @@ takeWhile f ps = take (findIndexOrEnd (not <<< f) ps) ps
 
 -- | 'dropWhile' @p xs@ returns the suffix remaining after 'takeWhile' @p xs@.
 dropWhile :: (Octet -> Boolean) -> ByteString -> ByteString
-dropWhile f ps = drop (findIndexOrEnd (not <<< f) ps) ps
+dropWhile f ps = U.unsafeDrop (findIndexOrEnd (not <<< f) ps) ps
 
 -- | `break`
 break :: (Octet -> Boolean) -> ByteString -> { before :: ByteString, after :: ByteString }
 break k ps = case findIndexOrEnd k ps of n -> { before: take n ps, after: drop n ps }
+
+-- | 'breakEnd' behaves like 'break' but from the end of the 'ByteString'
+breakEnd :: (Octet -> Boolean) -> ByteString -> { before :: ByteString, after :: ByteString }
+breakEnd p ps = splitAt (findFromEndUntil p ps) ps
+
+-- | 'span' @p xs@ breaks the ByteString into two segments.
+span :: (Octet -> Boolean) -> ByteString -> { before :: ByteString, after :: ByteString }
+span p ps = break (not <<< p) ps
 
 breakSubstring :: ByteString -> ByteString -> { before :: ByteString, after :: ByteString }
 breakSubstring pat src = case length pat, compare (length pat) (length src) of
@@ -330,20 +339,38 @@ intersperse c ps@(ByteString buf ofs len)
 
 foldl :: forall a. (a -> Octet -> a) -> a -> ByteString -> a
 foldl _ a (ByteString _ _ 0) = a
-foldl f i (ByteString x n _) = B.foldlPtr f i (x `plusPtr` n)
+foldl f i (ByteString x s n) = B.foldlPtr f i (x `plusPtr` s) n
 
 foldr :: forall a. (Octet -> a -> a) -> a -> ByteString -> a
 foldr _ a (ByteString _ _ 0) = a
-foldr f i (ByteString x s _) = B.foldrPtr f i (x `plusPtr` s)
+foldr f i (ByteString x s n) = B.foldrPtr f i (x `plusPtr` s) n
 
-foldMap :: forall m. Monoid m => (Octet -> m) -> ByteString -> m
-foldMap f = foldr (\x acc -> f x <> acc) mempty
+--------------------------------------------------------------------------------
+-- Special Fold ----------------------------------------------------------------
+--------------------------------------------------------------------------------
 
-all :: forall b. HeytingAlgebra b => (Octet -> b) -> ByteString -> b
-all = alaF Conj foldMap
+concatMap :: (Octet -> ByteString) -> ByteString -> ByteString
+concatMap f = F.fold <<< foldr ((:) <<< f) Nil
 
-any :: forall b. HeytingAlgebra b => (Octet -> b) -> ByteString -> b
-any = alaF Disj foldMap
+all :: (Octet -> Boolean) -> ByteString -> Boolean
+all _ (ByteString _ _ 0) = true
+all f (ByteString ptr s l) = go (ptr `plusPtr` s) (ptr `plusPtr` (s+l))
+  where
+  go p q
+    | p == q    = true
+    | otherwise =
+        let c = unsafePerformEff (B.unsafePeek p)
+        in if f c then go (p `plusPtr` 1) q else false
+
+any :: (Octet -> Boolean) -> ByteString -> Boolean
+any _ (ByteString _ _ 0) = false
+any f (ByteString ptr s l) = go (ptr `plusPtr` s) (ptr `plusPtr` (s+l))
+  where
+  go p q
+    | p == q = false
+    | otherwise =
+        let c = unsafePerformEff (B.unsafePeek p)
+        in if f c then true else go (p `plusPtr` 1) q
 
 copy :: ByteString -> ByteString
 copy (ByteString x s l) = B.unsafeCreate l \buf' ->
@@ -385,19 +412,31 @@ replicate w c
   | otherwise = B.unsafeCreate w \ptr -> B.memset ptr c w
 
 --------------------------------------------------------------------------------
+-- Zipping ---------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+zipWith :: forall a. (Octet -> Octet -> a) -> ByteString -> ByteString -> List a
+zipWith f ps0 qs0 = L.reverse $ go ps0 qs0 Nil
+  where
+  go ps qs xs
+    | null ps || null qs = xs
+    | otherwise          = go (U.unsafeTail ps) (U.unsafeTail qs) (f (U.unsafeHead ps) (U.unsafeHead qs) : xs)
+
+zip :: ByteString -> ByteString -> List (Tuple Octet Octet)
+zip = zipWith Tuple
+
+--------------------------------------------------------------------------------
 -- Internal Util ---------------------------------------------------------------
 --------------------------------------------------------------------------------
 
 findIndexOrEnd :: (Octet -> Boolean) -> ByteString -> Int
-findIndexOrEnd k (ByteString x s l) = go s x
+findIndexOrEnd k (ByteString x s l) = go (x `plusPtr` s) 0
   where
-    go n p
+    go p n
       | n >= l    = l
       | otherwise =
-          let a = unsafePerformEff $ peek p
-          in case a of
-            Nothing -> l
-            Just w  -> if k w then n else go (n + 1) (p `plusPtr` 1)
+          let w = unsafePerformEff $ unsafePeek p
+          in if k w then n else go (p `plusPtr` 1) (n + 1)
 
 findFromEndUntil :: (Octet -> Boolean) -> ByteString -> Int
 findFromEndUntil k ps@(ByteString x s l)

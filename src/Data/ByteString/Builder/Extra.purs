@@ -9,7 +9,8 @@ module Data.ByteString.Builder.Extra
   , newByteStringBuilderRecv
   , allNewBuffersStrategy
   , reuseBufferStrategy
-  , module Data.ByteString.Builder.Internal) where
+  , module Data.ByteString.Builder.Internal
+  ) where
 
 import Prelude
 

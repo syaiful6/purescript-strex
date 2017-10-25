@@ -261,11 +261,11 @@ intersperse :: forall eff. Ptr Uint8 -> Ptr Uint8 -> Octet -> Eff eff Unit
 intersperse (Ptr off1 av1) (Ptr off2 av2) c =
   Fn.runFn5 _intersperse av1 off1 av2 off2 c
 
-foldlPtr :: forall a. (a -> Octet -> a) -> a -> Ptr Uint8 -> a
-foldlPtr f a (Ptr offs av) = Fn.runFn4 _foldl f a offs av
+foldlPtr :: forall a. (a -> Octet -> a) -> a -> Ptr Uint8 -> Int -> a
+foldlPtr f a (Ptr offs av) n = Fn.runFn5 _foldl f a offs av n
 
-foldrPtr :: forall a. (Octet -> a -> a) -> a -> Ptr Uint8 -> a
-foldrPtr f a (Ptr offs av) = Fn.runFn4 _foldr f a offs av
+foldrPtr :: forall a. (Octet -> a -> a) -> a -> Ptr Uint8 -> Int -> a
+foldrPtr f a (Ptr offs av) n = Fn.runFn5 _foldr f a offs av n
 
 elemIndexEnd :: forall a. Int -> ArrayView a -> Maybe Int
 elemIndexEnd x xs = Fn.runFn4 _findLastIndex Nothing Just (x == _) xs
@@ -351,9 +351,9 @@ foreign import _toArray :: forall eff. Fn.Fn3 Uint8Array Offset Size (Eff eff (A
 
 foreign import _intersperse :: forall eff. Fn.Fn5 Uint8Array Offset Uint8Array Offset Octet (Eff eff Unit)
 
-foreign import _foldl :: forall a. Fn.Fn4 (a -> Octet -> a) a Offset Uint8Array a
+foreign import _foldl :: forall a. Fn.Fn5 (a -> Octet -> a) a Offset Uint8Array Int a
 
-foreign import _foldr :: forall a. Fn.Fn4 (Octet -> a -> a) a Offset Uint8Array a
+foreign import _foldr :: forall a. Fn.Fn5 (Octet -> a -> a) a Offset Uint8Array Int a
 
 foreign import _findSubstring :: Fn.Fn6 Uint8Array Offset Size Uint8Array Offset Size Int
 

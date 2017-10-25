@@ -102,20 +102,20 @@ exports._intersperse = function (target, targStart, src, srcStart, c) {
   };
 };
 
-exports._foldl = function (f, z, ofset, buf) {
-  var r = z, len = buf.length - ofset;
-  for (var i = ofset; i < len; ++i) {
-    r = f(r)(buf[i]);
+exports._foldl = function (f, z, ofset, buf, length) {
+  var r = z;
+  for (var i = 0; i < length; i++) {
+    r = f(r)(buf[ofset + i]);
   }
   return r;
 };
 
-exports._foldr = function (f, z, ofset, buf) {
-  var r = z, len = buf.length - ofset;
-  for (var i = len - 1; i >= len; --i) {
-    r = f(buf[i])(r)
+exports._foldr = function (f, z, ofset, buf, length) {
+  var acc = z
+  for (var i = ofset + length - 1; i >= ofset; i--) {
+    acc = f(buf[i])(acc);
   }
-  return r
+  return acc
 };
 
 exports.assert = function (bool) {
