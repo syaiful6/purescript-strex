@@ -27,7 +27,7 @@ import Data.ByteString.Builder.Internal
   (Builder, BuildStep, BufferRange(..), ensureFree, builder, bufferFull, refinedEff)
 import Data.ByteString.Builder.Prim.Types
   ( FixedPrim, BoundedPrim, size, runFP, emptyFP, liftToBounded, boundedPrim, sizeBound
-  , runBP, emptyBP )
+  , runBP, emptyBP, condB )
 import Data.ByteString.Builder.Prim.Types hiding (FixedPrim, BoundedPrim) as I
 import Data.ByteString.Builder.Prim.Binary
   ( int8BE, int16BE, int32BE, int8LE, int16LE , int32LE, uint8BE, uint16BE, uint32BE
