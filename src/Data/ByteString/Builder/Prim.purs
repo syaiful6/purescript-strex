@@ -32,6 +32,7 @@ import Data.ByteString.Builder.Prim.Types hiding (FixedPrim, BoundedPrim) as I
 import Data.ByteString.Builder.Prim.Binary
   ( int8BE, int16BE, int32BE, int8LE, int16LE , int32LE, uint8BE, uint16BE, uint32BE
   , uint8LE, uint16LE, uint32LE)
+import Data.Function.Uncurried as Fn
 import Data.Functor.Contravariant ((>$<))
 import Data.List as L
 import Data.Maybe (Maybe(..))
@@ -48,7 +49,7 @@ primBounded w x = ensureFree (I.sizeBound w) <> builder step
   where
   step :: forall r. BuildStep r -> BuildStep r
   step k (BufferRange op ope) = do
-    op' <- I.runBP w x op
+    op' <- Fn.runFn2 (I.runBP w) x op
     let br' = BufferRange op' ope
     k br'
 
@@ -60,7 +61,7 @@ primMapListBounded w xs0 = builder (step xs0)
     where
     go L.Nil op = Done <$> k (BufferRange op ope0)
     go xs@(L.Cons y ys) op
-      | op `plusPtr` bound <= ope0 = Loop <<< { a: ys, b:_ } <$> I.runBP w y op
+      | op `plusPtr` bound <= ope0 = Loop <<< { a: ys, b:_ } <$> Fn.runFn2 (I.runBP w) y op
       | otherwise                  = pure $ Done (bufferFull bound op (step xs k))
 
     bound = I.sizeBound w
@@ -81,7 +82,7 @@ primMapArrayBounded w xs0 = builder (step 0)
         whileE (readSTRef loop) do
           i' <- readSTRef ix
           op1 <- readSTRef op
-          op2 <- refinedEff (I.runBP w (unsafePartial (A.unsafeIndex xs0 i')) op1)
+          op2 <- refinedEff (Fn.runFn2 (I.runBP w) (unsafePartial (A.unsafeIndex xs0 i')) op1)
           let ix' = i' + 1
           unless (lenxs > ix' && op2 `plusPtr` bound <= ope0) (void $ writeSTRef loop false)
           _ <- writeSTRef op op2
@@ -110,7 +111,7 @@ primMapStringBounded w str = builder (step 0)
         whileE (readSTRef loop) do
           i' <- readSTRef ix
           op1 <- readSTRef op
-          op2 <- refinedEff (I.runBP w (unsafePartial (S.charAt i' str)) op1)
+          op2 <- refinedEff (Fn.runFn2 (I.runBP w) (unsafePartial (S.charAt i' str)) op1)
           let ix' = i' + 1
           unless (lenxs > ix' && op2 `plusPtr` bound <= ope0) (void $ writeSTRef loop false)
           _ <- writeSTRef op op2
@@ -131,10 +132,10 @@ primUnfoldrBounded w f x0 = builder (fillWith x0)
       let br' = BufferRange op ope0
       in Done <$> k br'
     go (Just (Tuple y x')) op
-      | op `plusPtr` bound <= ope0 = Loop <<< { a: f x', b:_ } <$> I.runBP w y op
+      | op `plusPtr` bound <= ope0 = Loop <<< { a: f x', b:_ } <$> Fn.runFn2 (I.runBP w) y op
       | otherwise = pure $ Done $ bufferFull bound op $
                       \(BufferRange opNew opeNew) -> do
-                        opNew' <- I.runBP w y opNew
+                        opNew' <- Fn.runFn2 (I.runBP w) y opNew
                         fillWith x' k (BufferRange opNew' opeNew)
   bound = I.sizeBound w
 
@@ -147,7 +148,7 @@ char8 = toCharCode >$< uint8BE
 charUtf8 :: BoundedPrim Char
 charUtf8 = I.boundedPrim 4 step
   where
-  step chr op = liftEff $ case toCharCode chr of
+  step = Fn.mkFn2 \chr op -> liftEff $ case toCharCode chr of
     x | x <= 0x7F -> do
           pokeByteOff op 0 x
           pure (op `plusPtr` 1)
