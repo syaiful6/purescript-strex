@@ -6,13 +6,9 @@ import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
 import Data.Functor.Contravariant ((>$<))
 
-import Data.ArrayBuffer.Types (Uint8Array, ArrayBuffer)
-import Data.ByteString (ByteString(..))
 import Data.ByteString.Builder as B
 import Data.ByteString.Builder.ASCII as PA
 import Data.ByteString.Builder.Prim as P
-import Data.ByteString.Internal (Ptr(..))
-import Data.Function.Uncurried as Fn
 import Data.Divide (divided)
 import Data.String as S
 import Data.Tuple (Tuple(..))
@@ -20,8 +16,6 @@ import Data.List.Lazy as Z
 import Data.List (List(Nil), (:), (..), fromFoldable)
 import Data.Foldable (fold, foldMap)
 import Data.Monoid (mempty)
-
-import Unsafe.Coerce (unsafeCoerce)
 
 import Performance.Minibench (bench)
 
@@ -126,16 +120,3 @@ renderTableBP rs = fold (map render rs)
 
 benchBuilderPrimUtf8 :: forall eff. Eff (console :: CONSOLE | eff) Unit
 benchBuilderPrimUtf8 = bench \_ -> (B.toLazyByteString <<< renderTableBP) maxiTable
-
-sliceBuf :: forall r. ByteString -> Eff r Uint8Array
-sliceBuf (ByteString (Ptr a av) n l) = Fn.runFn3 _sliceArrayBuffer (a + n) l (arrayBuffer av)
-
-foreign import _sliceArrayBuffer :: forall r. Fn.Fn3 Int Int ArrayBuffer (Eff r Uint8Array)
-
-foreign import writeFile :: forall e. Fn.Fn2 String Uint8Array (Eff e Unit)
-
-arrayBuffer :: Uint8Array -> ArrayBuffer
-arrayBuffer = _.buffer <<< typedArraytoRecord
-
-typedArraytoRecord :: Uint8Array -> { buffer :: ArrayBuffer, length :: Int }
-typedArraytoRecord = unsafeCoerce

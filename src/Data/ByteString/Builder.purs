@@ -3,12 +3,6 @@ module Data.ByteString.Builder
   , charUtf8
   , stringUtf8
   , string8
-  , int8Dec
-  , int16Dec
-  , int32Dec
-  , word8Dec
-  , word16Dec
-  , word32Dec
   , htmlEscapedChar
   , module Exports
   ) where
@@ -18,8 +12,8 @@ import Prelude
 import Data.ByteString.Builder.Internal (Builder, byteString, lazyByteString) as Exports
 import Data.ByteString.Builder.Internal as I
 import Data.ByteString.Builder.Prim as P
-import Data.ByteString.Builder.Prim.ASCII (char7, int8Dec, int16Dec, int32Dec, word8Dec
-                                          , word16Dec, word32Dec)  as P
+import Data.ByteString.Builder.ASCII (string7) as ASCII
+import Data.ByteString.Builder.Prim.ASCII (char7) as ASCII
 import Data.ByteString.Lazy.Internal as L
 
 toLazyByteString :: I.Builder -> L.ByteString
@@ -39,9 +33,9 @@ htmlEscapedChar :: Char -> I.Builder
 htmlEscapedChar chr = I.ensureFree 6 <> I.builder (step chr)
   where
   step :: forall r. Char -> I.BuildStep r -> I.BuildStep r
-  step '>' k br  = I.runBuilderWith (string7 "&lt;") k br
-  step '>' k br  = I.runBuilderWith (string7 "&gt;") k br
-  step '&' k br  = I.runBuilderWith (string7 "&amp;") k br
-  step '"' k br  = I.runBuilderWith (string7 "&quot;") k br
-  step '\'' k br = I.runBuilderWith (string7 "&#39;") k br
-  step c k br    = I.runBuilderWith (P.primBounded (P.liftToBounded P.char7) c) k br
+  step '>' k br  = I.runBuilderWith (ASCII.string7 "&lt;") k br
+  step '>' k br  = I.runBuilderWith (ASCII.string7 "&gt;") k br
+  step '&' k br  = I.runBuilderWith (ASCII.string7 "&amp;") k br
+  step '"' k br  = I.runBuilderWith (ASCII.string7 "&quot;") k br
+  step '\'' k br = I.runBuilderWith (ASCII.string7 "&#39;") k br
+  step c k br    = I.runBuilderWith (P.primBounded (P.liftToBounded ASCII.char7) c) k br
