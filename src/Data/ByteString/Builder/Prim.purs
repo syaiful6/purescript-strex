@@ -5,7 +5,6 @@ module Data.ByteString.Builder.Prim
   , primMapStringBounded
   , primUnfoldrBounded
   , primMapListBounded
-  , char7
   , char8
   , charUtf8
   , module Data.ByteString.Builder.Prim.Types
@@ -138,9 +137,6 @@ primUnfoldrBounded w f x0 = builder (fillWith x0)
                         opNew' <- Fn.runFn2 (I.runBP w) y opNew
                         fillWith x' k (BufferRange opNew' opeNew)
   bound = I.sizeBound w
-
-char7 :: FixedPrim Char
-char7 = (\c -> toCharCode c .&. 0x7F) >$< uint8BE
 
 char8 :: FixedPrim Char
 char8 = toCharCode >$< uint8BE

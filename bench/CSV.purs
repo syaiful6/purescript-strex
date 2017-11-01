@@ -6,6 +6,7 @@ import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
 
 import Data.ByteString.Builder as B
+import Data.ByteString.Builder.ASCII as PA
 import Data.ByteString.Builder.Prim as P
 import Data.ByteString.Builder.Prim.Binary as PB
 import Data.String as S
@@ -74,7 +75,7 @@ renderStringB cs = B.charUtf8 '"' <> foldMap escape (S.toCharArray cs) <> B.char
 
 renderCellB :: Cell -> B.Builder
 renderCellB (CellStr cs) = renderStringB cs
-renderCellB (CellInt i)  = P.primFixed PB.int32BE i
+renderCellB (CellInt i)  = PA.int8Dec i
 
 renderRowB :: Row -> B.Builder
 renderRowB = go
