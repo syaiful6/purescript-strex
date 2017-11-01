@@ -7,11 +7,14 @@ import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Unsafe (unsafePerformEff)
 
 import Data.Array as A
-import Data.ByteString as B
+import Data.ByteString.Lazy (toChunks)
+import Data.ByteString (pack) as B
+import Data.ByteString.Builder (toLazyByteString) as B
 import Data.ByteString.Builder.Internal (refinedEff)
 import Data.ByteString.Builder.Prim as P
 import Data.ByteString.Internal (mallocByteString)
 import Data.Function.Uncurried as Fn
+import Data.Foldable (fold)
 import Data.String (length) as S
 import Data.String.Unsafe (charAt) as S
 
@@ -37,31 +40,37 @@ benchChrPrim name str bp = case S.length str of
 
 benchByteStringStrict :: forall eff. Eff (console :: CONSOLE | eff) Unit
 benchByteStringStrict = do
-  log "Bench pack"
-  log "---------------\n"
-  let packed = A.range 0 255
-  bench \_ -> B.pack packed
-
-  log "Benc Builder Primitive"
-  log "---------------\n"
-  benchIntPrim "uint8BE" 100 (P.liftToBounded P.uint8BE)
-  log "---------------\n"
-  benchIntPrim "int8BE" 100 (P.liftToBounded P.int8BE)
-  log "---------------\n"
-  benchChrPrim "char7" "Purescript ~ Aku isa mangan beling tanpa lara" (P.liftToBounded P.char7)
-  log "---------------\n"
-  benchChrPrim "charUtf8" "Purescript ~ ﻿काचं शक्नोम्यत्तुम् । नोपहिनस्ति माम् ॥" P.charUtf8
-
-  log "---------------\n"
-  log "Bench CSV encoding using String\n"
-  CSV.benchString
-  log "---------------\n"
-  log "Bench CSV encoding using String Utf8\n"
-  CSV.benchStringUtf8
-  log "---------------\n"
-  log "Bench CSV encoding using utf8 + renderTableB maxiTable\n"
-  CSV.benchBuilderUtf8
-  log "---------------\n"
+  -- log "Bench pack"
+  -- log "---------------\n"
+  -- let packed = A.range 0 255
+  -- bench \_ -> B.pack packed
+  --
+  -- log "Benc Builder Primitive"
+  -- log "---------------\n"
+  -- benchIntPrim "uint8BE" 100 (P.liftToBounded P.uint8BE)
+  -- log "---------------\n"
+  -- benchIntPrim "int8BE" 100 (P.liftToBounded P.int8BE)
+  -- log "---------------\n"
+  -- benchChrPrim "char7" "Purescript ~ Aku isa mangan beling tanpa lara" (P.liftToBounded P.char7)
+  -- log "---------------\n"
+  -- benchChrPrim "charUtf8" "Purescript ~ ﻿काचं शक्नोम्यत्तुम् । नोपहिनस्ति माम् ॥" P.charUtf8
+  --
+  -- log "---------------\n"
+  -- log "Bench CSV encoding using String\n"
+  -- CSV.benchString
+  -- log "---------------\n"
+  -- log "Bench CSV encoding using String Utf8\n"
+  -- CSV.benchStringUtf8
+  -- log "---------------\n"
+  -- log "Bench CSV encoding using utf8 + renderTableB maxiTable\n"
+  -- CSV.benchBuilderUtf8
+  -- log "---------------\n"
+  -- log "Bench CSV encoding using Primitive utf8 + renderTableB maxiTable\n"
+  -- CSV.benchBuilderPrimUtf8
+  -- log "---------------\n"
+  let v = fold $ toChunks $ (B.toLazyByteString <<< CSV.renderTableBP) CSV.maxiTable
+  buf <- CSV.sliceBuf v
+  Fn.runFn2 CSV.writeFile "tesxa.csv" buf
 
 main :: forall eff. Eff (console :: CONSOLE | eff) Unit
 main = do
